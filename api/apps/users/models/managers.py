@@ -20,7 +20,7 @@ class UserManager(BaseUserManager):
         Args:
             email: User's email address (normalized)
             password: Plain-text password (will be hashed)
-            **extra_fields: Additional user fields
+            **extra_fields: Additional user fields (name, role, etc)
         
         Returns:
             User: Created user instance
@@ -35,6 +35,9 @@ class UserManager(BaseUserManager):
         user = self.model(email=email, **extra_fields)
         user.set_password(password)
         user.save(using=self._db)
+        
+        # Note: Profile auto-creation happens via signal (profile_signals.py)
+        # No need to create here - signals handle it
         
         return user
     
@@ -56,6 +59,7 @@ class UserManager(BaseUserManager):
         extra_fields.setdefault('is_staff', True)
         extra_fields.setdefault('is_superuser', True)
         extra_fields.setdefault('role', 'admin')
+        extra_fields.setdefault('name', email.split('@')[0])
         
         if extra_fields.get('is_staff') is not True:
             raise ValueError('Superuser must have is_staff=True')
@@ -65,52 +69,16 @@ class UserManager(BaseUserManager):
         return self.create_user(email, password, **extra_fields)
     
     # ============================================================================
-    # ROLE-BASED QUERY METHODS
+    # ROLE-BASED QUERY METHODS (DRY - use get_by_role internally)
     # ============================================================================
-    
-    def get_teachers(self):
-        """
-        Get all active teachers with optimized query.
-        
-        Returns:
-            QuerySet: Active teacher users with teacher_info prefetched
-        """
-        return self.filter(
-            role='teacher',
-            is_active=True
-        ).select_related('teacher_info')
-    
-    def get_students(self):
-        """
-        Get all active students with optimized query.
-        
-        Returns:
-            QuerySet: Active student users with student_info prefetched
-        """
-        return self.filter(
-            role='student',
-            is_active=True
-        ).select_related('student_info')
-    
-    def get_deans(self):
-        """
-        Get all active deans with optimized query.
-        
-        Returns:
-            QuerySet: Active dean users with teacher_info prefetched
-        """
-        return self.filter(
-            role='dean',
-            is_active=True
-        ).select_related('teacher_info')
     
     def get_by_role(self, role):
         """
-        Get active users by role with optimal prefetching (K-12 Focus).
+        Get active users by role with optimal prefetching.
 
         Automatically selects related objects based on role:
-        - Teachers/Deans: Prefetches teacher_info
-        - Students: Prefetches student_info and class_section
+        - Teachers/Deans: Prefetch teacher_info
+        - Students: Prefetch student_info and class_section
 
         Args:
             role: User role (admin, dean, teacher, student)
@@ -129,3 +97,39 @@ class UserManager(BaseUserManager):
             )
 
         return queryset
+    
+    def get_teachers(self):
+        """
+        Get all active teachers with optimized query.
+        
+        Returns:
+            QuerySet: Active teacher users
+        """
+        return self.get_by_role('teacher')
+    
+    def get_students(self):
+        """
+        Get all active students with optimized query.
+        
+        Returns:
+            QuerySet: Active student users
+        """
+        return self.get_by_role('student')
+    
+    def get_deans(self):
+        """
+        Get all active deans with optimized query.
+        
+        Returns:
+            QuerySet: Active dean users
+        """
+        return self.get_by_role('dean')
+    
+    def get_admins(self):
+        """
+        Get all active admins with optimized query.
+        
+        Returns:
+            QuerySet: Active admin users
+        """
+        return self.filter(role='admin', is_active=True)
